@@ -1,5 +1,8 @@
 Revision history for Perl extension CGI::Application::MailPage.
 
+1.4 (Oct 19, 2004)
+        - Fixed bug with regard to 'acceptable_domains' if 'page' has
+            a port number.
 1.3 (Oct 11, 2004)
         - Added 'acceptable_domains' param to restrict the domain
             of the page to mail (protection against spam)

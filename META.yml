@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name: CGI-Application-MailPage
-version: 1.3
+version: 1.4
 author:
   - Copyright 2002, Sam Tregar (sam@tregar.com).
   - |-
@@ -29,5 +29,5 @@ requires:
 provides:
   CGI::Application::MailPage:
     file: lib/CGI/Application/MailPage.pm
-    version: 1.3
+    version: 1.4
 generated_by: Module::Build version 0.25

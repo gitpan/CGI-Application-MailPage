@@ -14,7 +14,7 @@ use Text::Format;
 use URI;
 use base 'CGI::Application';
 
-$CGI::Application::VERSION = '1.3';
+$CGI::Application::VERSION = '1.4';
 
 sub setup {
     my $self = shift;
@@ -144,7 +144,7 @@ sub send_mail {
     if(
         $self->param('acceptable_domains')  #if we have any domains 
         && (ref($self->param('acceptable_domains')) eq 'ARRAY')   #if it's an array ref
-        && $page =~ m#^https?://([^/]+)#               #if the path's not relative
+        && $page =~ m#^https?://([^/:]+)#               #if the path's not relative
     ) 
     {
         my $domain = $1;
