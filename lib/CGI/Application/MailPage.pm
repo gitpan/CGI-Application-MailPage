@@ -1,7 +1,6 @@
 package CGI::Application::MailPage;
 
 use strict;
-
 use CGI::Application;
 use File::Spec;
 use HTML::Template;
@@ -12,10 +11,9 @@ use Mail::Header;
 use Mail::Internet;
 use Net::SMTP;
 use Text::Format;
+use base 'CGI::Application';
 
-use vars qw($VERSION @ISA);
-$VERSION = '1.0';
-@ISA = qw(CGI::Application);
+$CGI::Application::VERSION = '1.1';
 
 sub setup {
   my $self = shift;
@@ -43,22 +41,29 @@ sub show_form {
   if (not defined $page) {
     unless($self->param('use_page_param')) {
       $page = $query->referer();
-      return "Sorry, I can't tell what page you want to send.  You need to be using either Netscape 4 or Internet Explorer 4 (or newer) to use this feature.  Please upgrade your browser and try again!"
+      return $self->error(
+            "Sorry, I can't tell what page you want to send. " .
+            "You need to be using either Netscape 4 or Internet Explorer 4 (or newer) to use this feature. " . 
+            "Please upgrade your browser and try again!"
+            )
         unless defined $page;
     } else {
-      die "no value for page param!" unless defined $page;
+      return $self->error("no value for page param!") 
+        unless defined $page;
     }
   }    
 
   my $template;
   if ($self->param('form_template')) {    
-    $template = HTML::Template->new(filename => $self->param('form_template'),
+    $template = $self->load_tmpl($self->param('form_template'),
                                     cache => 1, 
                                     associate => $query);
     
   } else {
-    $template = HTML::Template->new(filename => 'CGI/Application/MailPage/form.tmpl',
-                                    path => [@INC],
+        my @path = $self->tmpl_path;
+        @path = @{ $self->tmpl_path} if(ref($path[0]) eq 'ARRAY');
+        $template = $self->load_tmpl('CGI/Application/MailPage/templates/form.tmpl',
+                                    path => [@path, @INC],
                                     cache => 1,
                                     associate => $query);
   }
@@ -92,31 +97,31 @@ sub send_mail {
 
   # check parameters
   my $name = $query->param('name');
-  die "Missing parameter assignment for \$name!"
+  return $self->error("Missing parameter assignment for \$name!")
     unless defined($name);
 
   my $from_email = $query->param('from_email');
-  die "Missing parameter assignment for \$from_email!"
+  return $self->error("Missing parameter assignment for \$from_email!")
     unless defined($from_email);  
   
   my $to_emails = $query->param('to_emails');
-  die "Missing parameter assignment for \$to_emails!"
+  return $self->error("Missing parameter assignment for \$to_emails!")
     unless defined($to_emails);
 
   my $note = $query->param('note');
-  die "Missing parameter assignment for \$note!"
+  return $self->error("Missing parameter assignment for \$note!")
     unless defined($note);
   
   my $format = $query->param('format');
-  die "Missing parameter assignment for \$format!"
+  return $self->error("Missing parameter assignment for \$format!")
     unless defined($format);
 
   my $subject = $query->param('subject');
-  die "Missing parameter assignment for \$subject!"
+  return $self->error("Missing parameter assignment for \$subject!")
     unless defined($subject);  
     
   my $page = $query->param('page');
-  die "Missing parameter assignment for \$page!"
+  return $self->error("Missing parameter assignment for \$page!")
     unless defined($page);
   
   return $self->show_form("Please fill in your name in the form below.")
@@ -148,7 +153,7 @@ sub send_mail {
 
   # find the HTML file to open
   my $filename = $self->_find_html_file($page);
-  die "Unable to find file $filename for page $page (might be empty or unreadable): $!"
+  return $self->error("Unable to find file $filename for page $page (might be empty or unreadable): $!")
     unless -e $filename and -r _ and -s _;
   my ($vol, $dir, $file) = File::Spec->splitpath($filename);
 
@@ -166,14 +171,16 @@ sub send_mail {
   # open the email template
   my $template;
   if ($self->param('email_template')) {    
-    $template = HTML::Template->new(filename => $self->param('email_template'),
+    $template = $self->load_tmpl($self->param('email_template'),
                                     associate => $query,
                                     cache => 1);
     
   } else {
-    $template = HTML::Template->new(filename => 'CGI/Application/MailPage/email.tmpl',
+        my @path = $self->tmpl_path;
+        @path = @{ $self->tmpl_path} if(ref($path[0]) eq 'ARRAY');
+        $template = $self->load_tmpl('CGI/Application/MailPage/templates/email.tmpl',
                                     associate => $query,
-                                    path => \@INC,
+                                    path => [@path, @INC],
                                     cache => 1);
   }
 
@@ -202,7 +209,7 @@ sub send_mail {
         my $callback = $self->param('read_file_callback');
         $buffer = $callback->($filename);
       } else {
-        open(HTML, $filename) or die "Can't open $filename : $!";
+        open(HTML, $filename) or return $self->error("Can't open $filename : $!");
         while(read(HTML, $buffer, 10240, length($buffer))) {}      
         close(HTML);
       }
@@ -248,7 +255,7 @@ sub send_mail {
         my $buffer = $callback->($filename);
         push(@lines, split("\n", $buffer));
       } else {
-        open(HTML, $filename) or die "Can't open $filename : $!";
+        open(HTML, $filename) or return $self->error("Can't open $filename : $!");
         push(@lines, <HTML>);
         close(HTML);
       }
@@ -259,14 +266,14 @@ sub send_mail {
     }
 
     $msg = Mail::Internet->new([], Header => $header, Body => \@lines);
-    die "Unable to create Mail::Internet object!"
+    return $self->error("Unable to create Mail::Internet object!")
       unless defined $msg;
   }
     
   # send the message using SMTP - other methods can be added later
   unless($self->param('dump_mail')) {
     my $smtp = Net::SMTP->new($self->param('smtp_server'));
-    die "Unable to connect to SMTP server ".$self->param('smtp_server')." : $!"
+    return $self->error("Unable to connect to SMTP server ".$self->param('smtp_server')." : $!")
       unless defined $smtp and UNIVERSAL::isa($smtp,'Net::SMTP');
     $smtp->debug(1) if $self->param('smtp_debug');
   
@@ -283,7 +290,7 @@ sub send_mail {
     # debuging hook for test.pl
     my $mailref = $self->param('dump_mail');
     $$mailref = $msg->as_string();
-    die "Mail Dumped";
+    return $self->error("Mail Dumped");
   }   
 
   # all done
@@ -297,12 +304,14 @@ sub show_thanks {
 
   my $template;
   if ($self->param('thanks_template')) {    
-    $template = HTML::Template->new(filename => $self->param('thanks_template'),
+    $template = $self->load_tmpl($self->param('thanks_template'),
                                     cache => 1);
     
   } else {
-    $template = HTML::Template->new(filename => 'CGI/Application/MailPage/thanks.tmpl',
-                                    path => [@INC],
+        my @path = $self->tmpl_path;
+        @path = @{ $self->tmpl_path} if(ref($path[0]) eq 'ARRAY');
+        $template = $self->load_tmpl('CGI/Application/MailPage/templates/thanks.tmpl',
+                                    path => [@path, @INC],
                                     cache => 1);
   }
 
@@ -311,12 +320,33 @@ sub show_thanks {
 }
 
 
+sub error {
+    my ($self, $msg) = @_;
+    my $template;
+
+    if($self->param('error_template')) {
+        $template = $self->load_tmpl( $self->param('error_template'),
+                    cache => 1
+        );
+    } else {
+        my @path = $self->tmpl_path;
+        @path = @{ $self->tmpl_path} if(ref($path[0]) eq 'ARRAY');
+        $template = $self->load_tmpl( 'CGI/Application/MailPage/templates/error.tmpl',
+                    path => [@path, @INC],
+                    cache => 1);
+    }
+
+    $template->param(error => $msg);
+    return $template->output();
+}
+
+
 sub _find_html_file {
   my $self = shift;
   my $url = shift;
   
   # if it doesn't start with http, its invalid
-  die "Invalid page url: $url"
+  return $self->error("Invalid page url: $url")
     unless $url =~ m!^https?://([-\w\.]+)/(.*)!;
   
   my $host = $1;
@@ -335,7 +365,7 @@ sub _find_html_file {
 
 #--------------------------------------------------------------------------
 #
-# prefixes to convert tags into - some are converted bachk to Text::Format
+# prefixes to convert tags into - some are converted back to Text::Format
 # formatting later
 #
 #--------------------------------------------------------------------------
@@ -506,7 +536,7 @@ sub _html2text {
     my $callback = $self->param('read_file_callback');
     $html_tree->parse( $callback->($filename) );
   } else {
-    open(HTML, $filename) or die "Can't open $filename : $!";
+    open(HTML, $filename) or return $self->error("Can't open $filename : $!");
     $html_tree->parse( join( '', <HTML> ) );
     close(HTML);
   }
@@ -738,6 +768,13 @@ C<@INC>.  Pass in the path to your custom template as the value of
 this parameter.
 
 See L<HTML::Template> for more information about the template syntax.
+
+=item * error_template
+
+The default template to display errors is called 'error.tmpl' and you
+can get it from the distribution or from wherever this module ended up
+in your C<@INC>. Pass in the path to you custom template as the value
+of this parameter.
 
 =item * read_file_callback
 

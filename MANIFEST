@@ -1,10 +1,12 @@
+Build.PL
 Changes
-MailPage.pm
+lib/CGI/Application/MailPage.pm
 Makefile.PL
-MANIFEST
-test.pl
-email.tmpl
-form.tmpl
-thanks.tmpl
-README
+MANIFEST			This list of files
+META.yml
+t/01.t
+templates/email.tmpl
+templates/error.tmpl
+templates/form.tmpl
+templates/thanks.tmpl
 test.html

@@ -1,0 +1,87 @@
+<html>
+<head>
+<title>Mail A Page To A Friend</title>
+<form method="post">
+<input type="hidden" name="rm" value="send_mail" />
+<input type="hidden" name="page" value="<tmpl_var escape='html' name='page'>" />
+</head>
+
+<style type="text/css">
+  td { 
+    background-color: #dddddd; 
+}
+  td.label { 
+    text-align: right; 
+    vertical-align: top; 
+    width: 50%; 
+    font-weight: bold;
+}
+  td.input { 
+    text-align: left; 
+    vertical-align: top; 
+    width: 50%;
+}
+  font {
+    color: #000000; 
+    font-size: 10pt;
+}
+  font.alert { 
+    font-size:12pt; 
+    color: red;
+}
+</style>
+
+<body>
+
+
+<table border="0" width="90%" align="center" cellspacing="3" cellpadding="5">
+<tr>
+   <td colspan="2" align="center">
+   <h2>Mail A Page To Your Friends</h2>
+   <p>
+   <tmpl_if alert><font class="alert"><tmpl_var alert></font><p></tmpl_if>
+   <h4>Just fill out the form below and click on <input type="submit" value="Send Email" />.<br />Fields marked with a <font class="alert">*</font> are required.</h4>
+   </td>
+</tr>
+
+
+<tr>
+    <td class="label"><font class="alert">*</font> Your Full Name:</td>
+    <td class="input"><input type="text" name="name" size="40" value="<tmpl_var escape='html' name='name'>" /></td>
+</tr>
+
+<tr>
+    <td class="label"><font class="alert">*</font> Your Email Address:</td>
+    <td class="input"><input type="text" name="from_email" size="40" value="<tmpl_var escape='html' name='from_email'>" /></td>
+</tr>
+
+<tr>
+    <td class="label"><font class="alert">*</font> Your Friend's Email Addresses:<br />
+        (separate with spaces, commas and linebreaks)</td>
+    <td class="input"><textarea name="to_emails" rows="3" cols="40"><tmpl_var to_emails></textarea></td>
+</tr>
+
+<tr>
+<td class="label"><font class="alert">*</font> Subject For The Email:</td>
+<td class="input"><input type="text" name="subject" size="40" value="<tmpl_var escape='html' name='subject'>" /></td>
+</tr>
+
+<tr>
+    <td class="label">Extra Note To Put In The Email:<br /></td>
+    <td class="input"><textarea name="note" rows="3" cols="40"><tmpl_var note></textarea></td>
+</tr>
+
+<tr>
+    <td class="label"><font class="alert">*</font> What To Send:<br />
+        (This determines what your friends will see in the email we send.  The default is 
+        usually the best choice unless you know that your friends can't view attachments.)</td>
+    <td class="input"><tmpl_var format_selector></td>
+</tr>
+
+<tr>
+    <td align="center" colspan="2"><input type="submit" value="Send Email" /></td>
+</tr>
+
+</table>
+</form>
+</html>
