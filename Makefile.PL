@@ -9,11 +9,14 @@ WriteMakefile
                            'File::Spec' => '0',
                            'HTML::TreeBuilder' => '0',
                            'HTTP::Date' => '0',
+                           'HTTP::Request' => '0',
+                           'LWP::UserAgent' => '0',
                            'MIME::Entity' => '0',
                            'Mail::Header' => '0',
                            'Mail::Internet' => '0',
                            'Net::SMTP' => '0',
-                           'Text::Format' => '0'
+                           'Text::Format' => '0',
+                           'URI' => '0'
                          },
           'INSTALLDIRS' => 'site',
           'PL_FILES' => {}

@@ -11,312 +11,384 @@ use Mail::Header;
 use Mail::Internet;
 use Net::SMTP;
 use Text::Format;
+use URI;
 use base 'CGI::Application';
 
-$CGI::Application::VERSION = '1.2';
+$CGI::Application::VERSION = '1.3';
 
 sub setup {
-  my $self = shift;
-  $self->start_mode('show_form');
-  $self->mode_param('rm');
-  $self->run_modes(
+    my $self = shift;
+    $self->start_mode('show_form');
+    $self->mode_param('rm');
+    $self->run_modes(
                    show_form => \&show_form,
                    send_mail => \&send_mail,
-                  );
+    );
 
-  # make sure we have required params
-  die "You must set PARAMS => { document_root => '/path' } in your MailPage stub!"
-    unless defined $self->param('document_root');
+    # make sure we have required params
+    die "You must set PARAMS => { document_root => '/path' } in your MailPage stub!"
+        unless defined $self->param('document_root');
 
-  die "You must set PARAMS => { smtp_server => 'your.smtp.server' } in your MailPage stub!"
-    unless defined $self->param('smtp_server');
+    die "You must set PARAMS => { smtp_server => 'your.smtp.server' } in your MailPage stub!"
+        unless defined $self->param('smtp_server');
 }
 
 sub show_form {
-  my $self = shift;
-  my $alert = shift;
-  my $query = $self->query;
+    my $self = shift;
+    my $alert = shift;
+    my $query = $self->query;
 
-  my $page = $query->param('page');
-  if (not defined $page) {
-    unless($self->param('use_page_param')) {
-      $page = $query->referer();
-      return $self->error(
-            "Sorry, I can't tell what page you want to send. " .
-            "You need to be using either Netscape 4 or Internet Explorer 4 (or newer) to use this feature. " . 
-            "Please upgrade your browser and try again!"
+    my $page = $query->param('page');
+    if (not defined $page) {
+        unless($self->param('use_page_param')) {
+            $page = $query->referer();
+            return $self->error(
+                "Sorry, I can't tell what page you want to send. " .
+                "You need to be using either Netscape 4 or Internet Explorer 4 (or newer) " .
+                "to use this feature. Please upgrade your browser and try again!"
             )
-        unless defined $page;
-    } else {
-      return $self->error("no value for page param!") 
-        unless defined $page;
-    }
-  }    
+                unless defined $page;
+        } else {
+            return $self->error("no value for page param!") 
+                unless defined $page;
+        }
+    }    
 
-  my $template;
-  if ($self->param('form_template')) {    
-    $template = $self->load_tmpl($self->param('form_template'),
-                                    cache => 1, 
-                                    associate => $query);
+    my $template;
+    if ($self->param('form_template')) {    
+        $template = $self->load_tmpl($self->param('form_template'),
+                                    die_on_bad_params   => 0,
+                                    cache               => 1, 
+                                    associate           => $query
+        );
     
-  } else {
+    } else {
         my @path = $self->tmpl_path;
         @path = @{ $self->tmpl_path} if(ref($path[0]) eq 'ARRAY');
         $template = $self->load_tmpl('CGI/Application/MailPage/templates/form.tmpl',
-                                    path => [@path, @INC],
-                                    cache => 1,
-                                    associate => $query);
-  }
+                                    die_on_bad_params   => 0,
+                                    path                => [@path, @INC],
+                                    cache               => 1,
+                                    associate           => $query,
+        );
+    }
 
-  $template->param(PAGE => $page);
-  $template->param(SUBJECT => $query->param('subject') || 
-                   $self->param('email_subject') || 
-                   '');
+    $template->param(PAGE => $page);
+    $template->param(
+        SUBJECT => ($query->param('subject') || $self->param('email_subject') || '')
+    );
 
-  $template->param(FORMAT_SELECTOR => 
+    my %formats = (
+        both_attachment => 'Both Text and Full HTML as Attachments',
+        html            => 'Full HTML',
+        html_attachment => 'Full HTML as an Attachment',
+        text            => 'Plain Text',
+        text_attachment => 'Plain Text as an Attachment',
+        url             => 'Just A Link',
+    );
+    #create the default dropdown menu
+    $template->param(FORMAT_SELECTOR => 
                    $query->popup_menu(-name => 'format',
-                                      '-values' => ['both_attachment', 'html','html_attachment', 'text', 'text_attachment', 'url'],
-                                      -labels => {
-                                                  url => 'Just A Link',
-                                                  html => 'Full HTML',
-                                                  html_attachment => 'Full HTML as an Attachment',
-                                                  text => 'Plain Text',
-                                                  text_attachment => 'Plain Text as an Attachment',
-                                                  both_attachment => 'Both Text and Full HTML as Attachments',
-                                                 },
+                                      '-values' => [ sort(keys %formats) ],
+                                      -labels => \%formats,
                                       -default => 'both_attachment',
-                                     ));
+                   )
+    );
+    #create a loop that the user can use as they wish
+    my @format_loop = ();
+    foreach my $key (sort(keys(%formats))) {
+        push(@format_loop, { value => $key, label => $formats{$key}});
+    }
+    $template->param(FORMAT_OPTIONS => \@format_loop);
   
-  $template->param(ALERT => $alert) if defined $alert;
-  return $template->output();
+    $template->param(ALERT => $alert) if defined $alert;
+    $template->param(%{$self->param('extra_tmpl_params')})
+        if($self->param('extra_tmpl_params'));
+    return $template->output();
 }
 
 sub send_mail {
-  my $self = shift;
-  my $query = $self->query;
+    my $self = shift;
+    my $query = $self->query;
 
-  # check parameters
-  my $name = $query->param('name');
-  return $self->error("Missing parameter assignment for \$name!")
-    unless defined($name);
+    # check parameters
+    my $name = $query->param('name');
+    return $self->error("Missing parameter assignment for \$name!")
+        unless defined($name);
 
-  my $from_email = $query->param('from_email');
-  return $self->error("Missing parameter assignment for \$from_email!")
-    unless defined($from_email);  
+    my $from_email = $query->param('from_email');
+    return $self->error("Missing parameter assignment for \$from_email!")
+        unless defined($from_email);  
   
-  my $to_emails = $query->param('to_emails');
-  return $self->error("Missing parameter assignment for \$to_emails!")
-    unless defined($to_emails);
+    my $to_emails = $query->param('to_emails');
+    return $self->error("Missing parameter assignment for \$to_emails!")
+        unless defined($to_emails);
 
-  my $note = $query->param('note');
-  return $self->error("Missing parameter assignment for \$note!")
-    unless defined($note);
+    my $note = $query->param('note');
+    return $self->error("Missing parameter assignment for \$note!")
+        unless defined($note);
   
-  my $format = $query->param('format');
-  return $self->error("Missing parameter assignment for \$format!")
-    unless defined($format);
+    my $format = $query->param('format');
+    return $self->error("Missing parameter assignment for \$format!")
+        unless defined($format);
 
-  my $subject = $query->param('subject');
-  return $self->error("Missing parameter assignment for \$subject!")
-    unless defined($subject);  
+    my $subject = $query->param('subject');
+    return $self->error("Missing parameter assignment for \$subject!")
+        unless defined($subject);  
     
-  my $page = $query->param('page');
-  return $self->error("Missing parameter assignment for \$page!")
-    unless defined($page);
+    my $page = $query->param('page');
+    return $self->error("Missing parameter assignment for \$page!")
+        unless defined($page);
+
+    #make sure this page is either relative or within the acceptable_domains
+    if(
+        $self->param('acceptable_domains')  #if we have any domains 
+        && (ref($self->param('acceptable_domains')) eq 'ARRAY')   #if it's an array ref
+        && $page =~ m#^https?://([^/]+)#               #if the path's not relative
+    ) 
+    {
+        my $domain = $1;
+        return $self->error("The domain for that desired page is not acceptable!")
+            unless( grep { lc($domain) eq lc($_) } @{$self->param('acceptable_domains')});
+    }
   
-  return $self->show_form("Please fill in your name in the form below.")
-    unless length $name;
+    return $self->show_form("Please fill in your name in the form below.")
+        unless length $name;
 
-  return $self->show_form("Please fill in your email address in the form below.")
-    unless length $from_email;
+    return $self->show_form("Please fill in your email address in the form below.")
+        unless length $from_email;
 
-  return $self->show_form("Please fill in your friends' email addresses in the form below.")
-    unless length $to_emails;
+    return $self->show_form("Please fill in your friends' email addresses in the form below.")
+        unless length $to_emails;
 
-  return $self->show_form("Please enter a Subject for the email in the form below.")
-    unless length $subject;
+    return $self->show_form("Please enter a Subject for the email in the form below.")
+        unless length $subject;
 
-  # check from_email
-  return $self->show_form("Your email address is invalid - it should look like name\@host.com.")
-    unless $from_email =~ /^[-\w\.]+\@[-\w\.]+$/;
+    # check from_email
+    return $self->show_form("Your email address is invalid - it should look like name\@host.com.")
+        unless $from_email =~ /^[-\w\.]+\@[-\w\.]+$/;
 
-  # parse out to_emails
-  my @to_emails;
-  foreach (split(/[\s,]+/, $to_emails)) {
-    next unless length $_;
-    return $self->show_form("One of your friend's email addresses is invalid - \"$_\" - it should look like name\@host.com.")
-      unless /^[-\w\.]+\@[-\w\.]+$/;
-    push(@to_emails, $_);
-  }
-  return $self->show_form("Please fill in your friends' email addresses in the form below.")
-    unless @to_emails;
+    # parse out to_emails
+    my @to_emails;
+    foreach (split(/[\s,]+/, $to_emails)) {
+        next unless length $_;
+        return $self->show_form("One of your friend's email addresses is invalid - \"$_\" - it should look like name\@host.com.")
+            unless /^[-\w\.]+\@[-\w\.]+$/;
+        push(@to_emails, $_);
+    }
+    return $self->show_form("Please fill in your friends' email addresses in the form below.")
+        unless @to_emails;
 
-  # find the HTML file to open
-  my $filename = $self->_find_html_file($page);
-  return $self->error("Unable to find file $filename for page $page (might be empty or unreadable): $!")
-    unless -e $filename and -r _ and -s _;
-  my ($vol, $dir, $file) = File::Spec->splitpath($filename);
+    # find the HTML file to open (if it's not a remote fetch)
+    my ($filename, $base_url, $base);
+    unless( $self->param('remote_fetch') && ($page =~ m!^https?://!) ) {
+        $filename = $self->_find_html_file($page);
+        return $self->error("Unable to find file $filename for page $page (might be empty or unreadable): $!")
+            unless -e $filename and -r _ and -s _;
+        my ($vol, $dir, $file) = File::Spec->splitpath($filename);
 
-  my $base_url = $page;
-  $base_url =~ s/\Q$file\E//;
+        $base_url = $page;
+        $base_url =~ s/\Q$file\E//;
  
-  # if file is empty, assume index.html
-  if (not defined $file or not length $file) {
-    $file = 'index.html';
-    $filename .= '/index.html';
-  }
+        # if file is empty, assume index.html
+        if (not defined $file or not length $file) {
+            $file = 'index.html';
+            $filename .= '/index.html';
+        }
  
-  my ($base, $ext) = $file =~ /(.*)\.([^\.]+)$/;
+        my $ext;
+        ($base, $ext) = $file =~ /(.*)\.([^\.]+)$/;
+    } else {
+        $base_url = URI->new($page);
+        $base_url = $base_url->scheme . '://' . $base_url->authority . '/' . $base_url->path; 
+    }
 
-  # open the email template
-  my $template;
-  if ($self->param('email_template')) {    
-    $template = $self->load_tmpl($self->param('email_template'),
-                                    associate => $query,
-                                    cache => 1);
-    
-  } else {
+    # open the email template
+    my $template;
+    if ($self->param('email_template')) {    
+        $template = $self->load_tmpl($self->param('email_template'),
+                                    die_on_bad_params   => 0,
+                                    associate           => $query,
+                                    cache               => 1,
+        );
+    } else {
         my @path = $self->tmpl_path;
         @path = @{ $self->tmpl_path} if(ref($path[0]) eq 'ARRAY');
         $template = $self->load_tmpl('CGI/Application/MailPage/templates/email.tmpl',
-                                    associate => $query,
-                                    path => [@path, @INC],
-                                    cache => 1);
-  }
+                                    die_on_bad_params   => 0,
+                                    associate           => $query,
+                                    path                => [@path, @INC],
+                                    cache               => 1,
+        );
+    }
+    $template->param(%{$self->param('extra_tmpl_params')})
+        if($self->param('extra_tmpl_params'));
 
-  # $msg will end up with either a Mail::Internet or MIME::Entity
-  # object.
-  my $msg;
+    # $msg will end up with either a Mail::Internet or MIME::Entity object.
+    my $msg;
 
-  # are we doing attachments?
-  if (index($format, '_attachment') != -1) {
-    # open up a MIME::Entity for our msg
-    $msg = MIME::Entity->build(
+    # are we doing attachments?
+    if (index($format, '_attachment') != -1) {
+        # open up a MIME::Entity for our msg
+        $msg = MIME::Entity->build(
                                Type     => "multipart/mixed",
                                From     => "$name <$from_email>",
                                'Reply-To' => "$name <$from_email>",
                                To       => \@to_emails,
                                Subject  => $subject,
                                Date => HTTP::Date::time2str(time()),
-                              );
+        );
 
-    $msg->attach(Data => $template->output);
+        $msg->attach(Data => $template->output);
 
-    # attach the straight HTML if requested
-    if ($format =~ /^(both|html)/) {
-      my $buffer = "";
-      if ($self->param('read_file_callback')) {
-        my $callback = $self->param('read_file_callback');
-        $buffer = $callback->($filename);
-      } else {
-        open(HTML, $filename) or return $self->error("Can't open $filename : $!");
-        while(read(HTML, $buffer, 10240, length($buffer))) {}      
-        close(HTML);
-      }
+        # attach the straight HTML if requested
+        if ($format =~ /^(both|html)/) {
+            my $buffer = "";
+            if ($self->param('read_file_callback')) {
+                my $callback = $self->param('read_file_callback');
+                $buffer = $callback->($filename);
+            } elsif( $self->param('remote_fetch') && ($page =~ /^https?:\/\//) ) {
+                #fetch this page with LWP
+                require LWP::UserAgent;
+                require HTTP::Request;
+                my $agent = LWP::UserAgent->new();
+                my $response = $agent->request(HTTP::Request->new(GET => $page));
+                if( $response->is_success ) {
+                    $buffer = $response->content();
+                } else {
+                    return $self->error("Unable to retrieve remote page $page");
+                }
+            } else {
+                open(HTML, $filename) or return $self->error("Can't open $filename : $!");
+                while(read(HTML, $buffer, 10240, length($buffer))) {}      
+                close(HTML);
+            }
        
-      # add <BASE> tag in <HEAD>
-      $buffer =~ s/(<\s*[Hh][Ee][Aa][Dd].*?>)/$1\n<base href=$base_url>\n/;
+            # add <BASE> tag in <HEAD>
+            $buffer =~ s/(<\s*[Hh][Ee][Aa][Dd].*?>)/$1\n<base href=$base_url>\n/
+                if( $base_url );
       
-      $msg->attach(Data => $buffer,
-                   Type => 'text/html',
-                   Filename => $base . '.html',
-                  );
-    }
+            my $filename = $base ? "$base.html" : $page;
+            $msg->attach(
+                    Data        => $buffer,
+                    Type        => 'text/html',
+                    Filename    => $filename,
+            );
+        }
 
-    # attach text translation
-    if ($format =~ /^(both|text)/) {
-      $msg->attach(Data => $self->_html2text($filename),
-                   Type => 'text/plain',
-                   Filename => $base . '.txt',
-                  );
-    }
+        # attach text translation
+        if ($format =~ /^(both|text)/) {
+            my $new_filename = $base ? "$base.txt" : "$page.txt";
+            $msg->attach(
+                    Data        => $self->_html2text($filename, $page),
+                    Type        => 'text/plain',
+                    Filename    => $new_filename,
+            );
+        }
 
-  } else {
-    # non attachment mail
-    my $header = Mail::Header->new();
-    $header->add(From => "$name <$from_email>");
-    $header->add('Reply-To' => "$name <$from_email>");
-    $header->add(To => join(', ', @to_emails));
-    $header->add(Subject  => $subject);
-    $header->add(Date => HTTP::Date::time2str(time()));
+    } else {
+        # non attachment mail
+        my $header = Mail::Header->new();
+        $header->add(From => "$name <$from_email>");
+        $header->add('Reply-To' => "$name <$from_email>");
+        $header->add(To => join(', ', @to_emails));
+        $header->add(Subject  => $subject);
+        $header->add(Date => HTTP::Date::time2str(time()));
 
-    my @lines;
-    push(@lines, $template->output());
+        my @lines;
+        push(@lines, $template->output());
 
-    if ($format =~ /^(both|text)/) {
-      push(@lines, "\n---\n\n");
-      push(@lines, $self->_html2text($filename));
+        if ($format =~ /^(both|text)/) {
+            push(@lines, "\n---\n\n");
+            push(@lines, $self->_html2text($filename, $page));
+        }
+    
+        if ($format =~ /^(both|html)/) {
+            push(@lines, "\n---\n\n");
+            if ($self->param('read_file_callback')) {
+                my $callback = $self->param('read_file_callback');
+                my $buffer = $callback->($filename);
+                push(@lines, split("\n", $buffer));
+            } elsif( $self->param('remote_fetch') && ($page =~ /^https?:\/\//) ) {
+                #fetch this page with LWP
+                require LWP::UserAgent;
+                require HTTP::Request;
+                my $agent = LWP::UserAgent->new();
+                my $response = $agent->request(HTTP::Request->new(GET => $page));
+                if( $response->is_success ) {
+                    my $buffer = $response->content();
+                    @lines = split(/\r?\n/, $buffer);
+                } else {
+                    return $self->error("Unable to retrieve remote page $page");
+                }
+            } else {
+                open(HTML, $filename) or return $self->error("Can't open $filename : $!");
+                push(@lines, <HTML>);
+                close(HTML);
+            }
+        }
+
+        if ($format =~ /url/) {
+            push(@lines, "\n$page");
+        }
+
+        $msg = Mail::Internet->new([], Header => $header, Body => \@lines);
+        return $self->error("Unable to create Mail::Internet object!")
+            unless defined $msg;
     }
     
-    if ($format =~ /^(both|html)/) {
-      push(@lines, "\n---\n\n");
-      if ($self->param('read_file_callback')) {
-        my $callback = $self->param('read_file_callback');
-        my $buffer = $callback->($filename);
-        push(@lines, split("\n", $buffer));
-      } else {
-        open(HTML, $filename) or return $self->error("Can't open $filename : $!");
-        push(@lines, <HTML>);
-        close(HTML);
-      }
-    }
-
-    if ($format =~ /url/) {
-      push(@lines, "\n$page");
-    }
-
-    $msg = Mail::Internet->new([], Header => $header, Body => \@lines);
-    return $self->error("Unable to create Mail::Internet object!")
-      unless defined $msg;
-  }
-    
-  # send the message using SMTP - other methods can be added later
-  unless($self->param('dump_mail')) {
-    my $smtp = Net::SMTP->new($self->param('smtp_server'));
-    return $self->error("Unable to connect to SMTP server ".$self->param('smtp_server')." : $!")
-      unless defined $smtp and UNIVERSAL::isa($smtp,'Net::SMTP');
-    $smtp->debug(1) if $self->param('smtp_debug');
+    # send the message using SMTP - other methods can be added later
+    unless($self->param('dump_mail')) {
+        my $smtp = Net::SMTP->new($self->param('smtp_server'));
+        return $self->error("Unable to connect to SMTP server ".$self->param('smtp_server')." : $!")
+            unless defined $smtp and UNIVERSAL::isa($smtp,'Net::SMTP');
+        $smtp->debug(1) if $self->param('smtp_debug');
   
-    $smtp->mail("$name <$from_email>");
-    foreach (@to_emails) {
-      $smtp->to($_);
-    }
-    $smtp->data();
-    $smtp->datasend($msg->as_string());
-    $smtp->dataend();
-    $smtp->quit();
+        $smtp->mail("$name <$from_email>");
+        foreach (@to_emails) {
+            $smtp->to($_);
+        }
+        $smtp->data();
+        $smtp->datasend($msg->as_string());
+        $smtp->dataend();
+        $smtp->quit();
 
-  } else {
-    # debuging hook for test.pl
-    my $mailref = $self->param('dump_mail');
-    $$mailref = $msg->as_string();
-    return $self->error("Mail Dumped");
-  }   
+    } else {
+        # debuging hook for test.pl
+        my $mailref = $self->param('dump_mail');
+        $$mailref = $msg->as_string();
+        return $self->error("Mail Dumped");
+    }   
 
-  # all done
-  return $self->show_thanks;
+    # all done
+    return $self->show_thanks;
 }
 
 sub show_thanks {
-  my $self = shift;
-  my $query = $self->query;
-  my $page = $query->param('page');
+    my $self = shift;
+    my $query = $self->query;
+    my $page = $query->param('page');
 
-  my $template;
-  if ($self->param('thanks_template')) {    
-    $template = $self->load_tmpl($self->param('thanks_template'),
-                                    cache => 1);
-    
-  } else {
+    my $template;
+    if ($self->param('thanks_template')) {    
+        $template = $self->load_tmpl($self->param('thanks_template'),
+                                    die_on_bad_params   => 0,
+                                    cache               => 1,
+        );
+    } else {
         my @path = $self->tmpl_path;
         @path = @{ $self->tmpl_path} if(ref($path[0]) eq 'ARRAY');
         $template = $self->load_tmpl('CGI/Application/MailPage/templates/thanks.tmpl',
-                                    path => [@path, @INC],
-                                    cache => 1);
-  }
+                                    die_on_bad_params   => 0,
+                                    path                => [@path, @INC],
+                                    cache               => 1,
+        );
+    }
 
-  $template->param(PAGE => $page);
-  return $template->output();
+    $template->param(PAGE => $page);
+    $template->param(%{$self->param('extra_tmpl_params')})
+        if($self->param('extra_tmpl_params'));
+    return $template->output();
 }
 
 
@@ -326,38 +398,41 @@ sub error {
 
     if($self->param('error_template')) {
         $template = $self->load_tmpl( $self->param('error_template'),
-                    cache => 1
+                                    die_on_bad_params   => 0,
+                                    cache               => 1,
         );
     } else {
         my @path = $self->tmpl_path;
         @path = @{ $self->tmpl_path} if(ref($path[0]) eq 'ARRAY');
         $template = $self->load_tmpl( 'CGI/Application/MailPage/templates/error.tmpl',
-                    path => [@path, @INC],
-                    cache => 1);
+                                    die_on_bad_params   => 0,
+                                    path                => [@path, @INC],
+                                    cache               => 1,
+        );
     }
 
     $template->param(error => $msg);
+    $template->param(%{$self->param('extra_tmpl_params')})
+        if($self->param('extra_tmpl_params'));
     return $template->output();
 }
 
-
 sub _find_html_file {
-  my $self = shift;
-  my $url = shift;
-  my $path;
-                                                                                                                                             
-  # if it doesn't start with http, its relative to web root
-  if($url =~ m!^https?://([-\w\.:]+)/(.*)!) {
-    my $host = $1;
-    $path = $2;
-    # if the path starts with a ~user thing, remove it
-    $path =~ s!~[^/]+/!!;
-  } else {
-    $path = ($url =~ /^\//) ? $url : "/$url";   #make sure it has a preceding path
-  }
-                                                                                                                                             
-  # append it to document_root and return it
-  return File::Spec->join($self->param('document_root'), $path);
+    my $self = shift;
+    my $url = shift;
+    my $path;
+
+    # if it doesn't start with http, its relative to web root
+    if($url =~ m!^https?://([-\w\.:]+)/(.*)!) {
+        my $host = $1;
+        $path = $2;
+        # if the path starts with a ~user thing, remove it
+        $path =~ s!~[^/]+/!!;
+    } else {
+        $path = ($url =~ /^\//) ? $url : "/$url";   #make sure it has a preceding path
+    }
+    # append it to document_root and return it
+    return File::Spec->join($self->param('document_root'), $path);
 }  
     
 # takes an html file and returns text.  This code was taken and
@@ -391,6 +466,7 @@ my @heading_number = ( 0, 0, 0, 0, 0, 0 );
 sub _html2text {
   my $self = shift;
   my $filename = shift;
+  my $page = shift;
 
   my $html_tree = new HTML::TreeBuilder;
   my $text_formatter = new Text::Format;
@@ -536,6 +612,18 @@ sub _html2text {
   if ($self->param('read_file_callback')) {
     my $callback = $self->param('read_file_callback');
     $html_tree->parse( $callback->($filename) );
+  } elsif( $self->param('remote_fetch') && ($page =~ /^https?:\/\//) ) {
+      #fetch this page with LWP
+      require LWP::UserAgent;
+      require HTTP::Request;
+      my $agent = LWP::UserAgent->new();
+      my $response = $agent->request(HTTP::Request->new(GET => $page));
+      if( $response->is_success ) {
+          my $buffer = $response->content();
+          $html_tree->parse($buffer);
+      } else {
+          return $self->error("Unable to retrieve remote page $page");
+      }
   } else {
     open(HTML, $filename) or return $self->error("Can't open $filename : $!");
     $html_tree->parse( join( '', <HTML> ) );
@@ -792,6 +880,28 @@ manipulation of the HTML text.  The called subroutine recieves one
 arguement, the name of the file to be opened.  It should return the
 text of the file.  Here's an example that changes all 'p's to 'q's in
 the text of the files:
+
+=item * acceptable_domains
+
+You may provide a list (array ref) of domains that are acceptable for this
+mailpage instance to send out in the emails. This prevents spammers, etc from
+using your mailpage to send out pages of advertisements, etc. If you give any
+values to this list, all 'page' urls that are being sent must either be
+relative or must be in your list of acceptable domains.
+
+=item * remote_fetch
+
+If this is true, then MailPage will try and perform a remote fetch of the page
+using L<LWP> instead of looking on the local filesystem for that page.
+
+=item * extra_tmpl_params
+
+If this value is a hash ref, then it will be combined with the parameters generated
+by MailPage for each template. The values in your hash will override those created
+by MailPage. The resulting hash will be passed to the template in question. This gives
+even more flexibility in making the mailpage section look just like the rest of your
+site. If is your responsibility to make sure that these parameters will be in the format
+that HTML::Template is expecting.
 
    #!/usr/bin/perl -w
    use CGI::Application::MailPage;

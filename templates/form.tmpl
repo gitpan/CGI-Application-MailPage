@@ -39,7 +39,7 @@
    <td colspan="2" align="center">
    <h2>Mail A Page To Your Friends</h2>
    <p>
-   <tmpl_if alert><font class="alert"><tmpl_var alert></font><p></tmpl_if>
+   <tmpl_if alert><font class="alert"><tmpl_var alert escape=HTML></font><p></tmpl_if>
    <h4>Just fill out the form below and click on <input type="submit" value="Send Email" />.<br />Fields marked with a <font class="alert">*</font> are required.</h4>
    </td>
 </tr>
@@ -75,7 +75,14 @@
     <td class="label"><font class="alert">*</font> What To Send:<br />
         (This determines what your friends will see in the email we send.  The default is 
         usually the best choice unless you know that your friends can't view attachments.)</td>
-    <td class="input"><tmpl_var format_selector></td>
+    <!--<td class="input"><tmpl_var format_selector></td>-->
+    <td class="input">
+      <select name="format">
+        <tmpl_loop format_options>
+          <option value="<tmpl_var value escape=HTML>"><tmpl_var label escape=HTML></option>
+        </tmpl_loop>
+      </select>
+    </td>
 </tr>
 
 <tr>
