@@ -13,7 +13,7 @@ use Net::SMTP;
 use Text::Format;
 use base 'CGI::Application';
 
-$CGI::Application::VERSION = '1.1';
+$CGI::Application::VERSION = '1.2';
 
 sub setup {
   my $self = shift;
@@ -344,17 +344,18 @@ sub error {
 sub _find_html_file {
   my $self = shift;
   my $url = shift;
-  
-  # if it doesn't start with http, its invalid
-  return $self->error("Invalid page url: $url")
-    unless $url =~ m!^https?://([-\w\.]+)/(.*)!;
-  
-  my $host = $1;
-  my $path = $2;
-  
-  # if the path starts with a ~user thing, remove it
-  $path =~ s!~[^/]+/!!;
-  
+  my $path;
+                                                                                                                                             
+  # if it doesn't start with http, its relative to web root
+  if($url =~ m!^https?://([-\w\.:]+)/(.*)!) {
+    my $host = $1;
+    $path = $2;
+    # if the path starts with a ~user thing, remove it
+    $path =~ s!~[^/]+/!!;
+  } else {
+    $path = ($url =~ /^\//) ? $url : "/$url";   #make sure it has a preceding path
+  }
+                                                                                                                                             
   # append it to document_root and return it
   return File::Spec->join($self->param('document_root'), $path);
 }  
@@ -734,6 +735,12 @@ page you put the link in.  You could cook up some Javascript to do
 this for you, but if the browser has working Javascript then it
 probably has a working REFERER!
 
+The value of 'page' doesn't have to be a full url, but could be relative
+to the web root. For instance this would work as well:
+
+   <A HREF="mailpage.cgi?page=/page.html">mail page</A>
+
+
 =item * email_subject
 
 The default subject of the email sent from the program.  Defaults to
@@ -815,6 +822,8 @@ the text of the files:
 =head1 AUTHOR
 
 Copyright 2002, Sam Tregar (sam@tregar.com).
+
+Co-maintainer Michael Peters (michael@petersfamily.org).
 
 Questions, bug reports and suggestions can be sent to the
 CGI::Application mailing list.  You can subscribe by sending a blank

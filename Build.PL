@@ -20,7 +20,7 @@ my $build = Module::Build->new (
             'lib/CGI/Application/MailPage.pm' => 'lib/CGI/Application/MailPage.pm', 
             'templates/email.tmpl' => 'lib/CGI/Application/MailPage/templates/email.tmpl',
             'templates/error.tmpl' => 'lib/CGI/Application/MailPage/templates/error.tmpl',
-            'templates/form.tmpl' => 'lib/CGI/Application/MailPage/templates/from.tmpl',
+            'templates/form.tmpl' => 'lib/CGI/Application/MailPage/templates/form.tmpl',
             'templates/thanks.tmpl' => 'lib/CGI/Application/MailPage/templates/thanks.tmpl',
             },
        
