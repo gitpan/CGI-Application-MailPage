@@ -1,0 +1,67 @@
+<HTML>
+<HEAD>
+<TITLE>Mail A Page To A Friend</TITLE>
+<FORM METHOD=POST>
+<INPUT TYPE=HIDDEN NAME=rm VALUE=send_mail>
+<INPUT TYPE=HIDDEN NAME=page VALUE="<TMPL_VAR ESCAPE=HTML PAGE>">
+</HEAD>
+
+<BODY>
+
+<CENTER>
+
+<TABLE BORDER=0 WIDTH=90% ALIGN=CENTER CELLSPACING=3 CELLPADDING=5>
+
+<TR>
+   <TD BGCOLOR=#dddddd ALIGN=CENTER COLSPAN=2>
+   <FONT SIZE=+2>Mail A Page To Your Friends</FONT>
+   <P>
+   <TMPL_IF ALERT><FONT SIZE=+1 COLOR=RED><TMPL_VAR ALERT></FONT><P></TMPL_IF>
+   <FONT SIZE=+1>Just fill out the form below and click on <INPUT TYPE=SUBMIT VALUE="Send Email">.<BR>Fields marked with a <FONT COLOR=RED>*</FONT> are required.</FONT>
+   </TD>
+</TR>
+
+
+</CENTER>
+
+
+<TR>
+<TD WIDTH=50% BGCOLOR=#dddddd ALIGN=RIGHT VALIGN=TOP><B><FONT COLOR=RED>*</FONT> Your Full Name:</B></TD>
+<TD WIDTH=50% BGCOLOR=#dddddd VALIGN=TOP><INPUT TYPE=TEXT NAME=name SIZE=40 VALUE="<TMPL_VAR ESCAPE=HTML NAME="NAME">"></TD>
+</TR>
+
+<TR>
+<TD WIDTH=50% BGCOLOR=#dddddd ALIGN=RIGHT VALIGN=TOP><B><FONT COLOR=RED>*</FONT> Your Email Address:</B></TD>
+<TD WIDTH=50% BGCOLOR=#dddddd VALIGN=TOP><INPUT TYPE=TEXT NAME=from_email SIZE=40 VALUE="<TMPL_VAR ESCAPE=HTML NAME="FROM_EMAIL">"></TD>
+</TR>
+
+<TR>
+<TD BGCOLOR=#dddddd ALIGN=RIGHT VALIGN=TOP><B><FONT COLOR=RED>*</FONT> Your Friend's Email Addresses:</B><BR>(separate with spaces, commas and linebreaks)</TD>
+<TD BGCOLOR=#dddddd VALIGN=TOP><TEXTAREA NAME=to_emails ROWS=3 COLS=40><TMPL_VAR TO_EMAILS></TEXTAREA></TD>
+</TR>
+
+<TR>
+<TD WIDTH=50% BGCOLOR=#dddddd ALIGN=RIGHT VALIGN=TOP><B><FONT COLOR=RED>*</FONT> Subject For The Email:</B></TD>
+<TD WIDTH=50% BGCOLOR=#dddddd VALIGN=TOP><INPUT TYPE=TEXT NAME=subject SIZE=40 VALUE="<TMPL_VAR ESCAPE=HTML NAME="SUBJECT">"></TD>
+</TR>
+
+<TR>
+<TD BGCOLOR=#dddddd ALIGN=RIGHT VALIGN=TOP><B>Extra Note To Put In The Email:<BR></B></TD>
+<TD BGCOLOR=#dddddd VALIGN=TOP><TEXTAREA NAME=note ROWS=3 COLS=40><TMPL_VAR NOTE></TEXTAREA></TD>
+</TR>
+
+<TR>
+<TD BGCOLOR=#dddddd ALIGN=RIGHT VALIGN=TOP><B><FONT COLOR=RED>*</FONT> What To Send:</B><BR>(This determines what your friends will see in the email we send.  The default is usually the best choice unless you know that your friends can't view attachments.)</TD>
+<TD BGCOLOR=#dddddd VALIGN=TOP><TMPL_VAR FORMAT_SELECTOR></TD>
+</TR>
+
+<TR>
+<TD BGCOLOR=#dddddd ALIGN=CENTER COLSPAN=2><INPUT TYPE=SUBMIT VALUE="Send Email"></TD>
+</TR>
+
+</TABLE>
+
+</CENTER>
+
+</FORM>
+</HTML>
