@@ -218,7 +218,7 @@ $ENV{CGI_APP_RETURN_ONLY} = 1;
 {
     $options->{rm} = 'send_mail';
     $options->{format} = 'both_attachment';
-    $options->{page} = 'http://example.com';
+    $options->{page} = 'http://google.com';
     my $query = CGI->new($options);
     my $mail;
     my $mailpage = CGI::Application::MailPage->new(
@@ -233,14 +233,14 @@ $ENV{CGI_APP_RETURN_ONLY} = 1;
                                               );
     my $output = $mailpage->run();
     die $output if($output !~ /Mail Dumped/);
-    ok($mail =~ m!http://example\.com!, 'remote_fetch valid url (both_attachment)');
+    ok($mail =~ m!http://google\.com!, 'remote_fetch valid url (both_attachment)');
 }
 
 # 14 - test the 'remote_fetch' with a good url with 'html'
 {
     $options->{rm} = 'send_mail';
     $options->{format} = 'html';
-    $options->{page} = 'http://example.com';
+    $options->{page} = 'http://google.com';
     my $query = CGI->new($options);
     my $mail;
     my $mailpage = CGI::Application::MailPage->new(
@@ -255,14 +255,14 @@ $ENV{CGI_APP_RETURN_ONLY} = 1;
                                               );
     my $output = $mailpage->run();
     die $output if($output !~ /Mail Dumped/);
-    ok($mail =~ m!<a href="http://www\.rfc-editor\.org/rfc/rfc2606\.txt">!, 'remote_fetch valid url (html)');
+    ok($mail =~ m!<title>Google</title>!, 'remote_fetch valid url (html)');
 }
 
 # 15 - test the 'remote_fetch' with a good url with 'html_attachment'
 {
     $options->{rm} = 'send_mail';
     $options->{format} = 'html_attachment';
-    $options->{page} = 'http://example.com';
+    $options->{page} = 'http://google.com';
     my $query = CGI->new($options);
     my $mail;
     my $mailpage = CGI::Application::MailPage->new(
@@ -277,14 +277,14 @@ $ENV{CGI_APP_RETURN_ONLY} = 1;
                                               );
     my $output = $mailpage->run();
     die $output if($output !~ /Mail Dumped/);
-    ok($mail =~ m!<a href="http://www\.rfc-editor\.org/rfc/rfc2606\.txt">!, 'remote_fetch valid url (html_attachment)');
+    ok($mail =~ m!<title>Google</title>!, 'remote_fetch valid url (html)');
 }
 
 # 16 - test the 'remote_fetch' with a good url with 'text'
 {
     $options->{rm} = 'send_mail';
     $options->{format} = 'text';
-    $options->{page} = 'http://example.com';
+    $options->{page} = 'http://google.com';
     my $query = CGI->new($options);
     my $mail;
     my $mailpage = CGI::Application::MailPage->new(
@@ -299,14 +299,14 @@ $ENV{CGI_APP_RETURN_ONLY} = 1;
                                               );
     my $output = $mailpage->run();
     die $output if($output !~ /Mail Dumped/);
-    ok($mail =~ /RFC\s+2606/, 'remote_fetch valid url (text)');
+    ok($mail =~ m!Google!, 'remote_fetch valid url (html)');
 }
                                                                                                                                            
 # 17 - test the 'remote_fetch' with a good url with 'text_attachment'
 {
     $options->{rm} = 'send_mail';
     $options->{format} = 'text_attachment';
-    $options->{page} = 'http://example.com';
+    $options->{page} = 'http://google.com';
     my $query = CGI->new($options);
     my $mail;
     my $mailpage = CGI::Application::MailPage->new(
@@ -321,14 +321,14 @@ $ENV{CGI_APP_RETURN_ONLY} = 1;
                                               );
     my $output = $mailpage->run();
     die $output if($output !~ /Mail Dumped/);
-    ok($mail =~ /RFC\s+2606/, 'remote_fetch valid url (text_attachment)');
+    ok($mail =~ m!Google!, 'remote_fetch valid url (html)');
 }
 
 # 18 - test the 'remote_fetch' with a good url with 'url'
 {
     $options->{rm} = 'send_mail';
     $options->{format} = 'url';
-    $options->{page} = 'http://example.com';
+    $options->{page} = 'http://google.com';
     my $query = CGI->new($options);
     my $mail;
     my $mailpage = CGI::Application::MailPage->new(
@@ -343,7 +343,7 @@ $ENV{CGI_APP_RETURN_ONLY} = 1;
                                               );
     my $output = $mailpage->run();
     die $output if($output !~ /Mail Dumped/);
-    ok($mail =~ m!http://example.com!, 'remote_fetch valid url (url)');
+    ok($mail =~ m!http://google.com!, 'remote_fetch valid url (url)');
 }
 
 

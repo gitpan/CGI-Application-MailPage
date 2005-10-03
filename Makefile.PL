@@ -2,23 +2,24 @@
 use ExtUtils::MakeMaker;
 WriteMakefile
 (
+          'PL_FILES' => {},
+          'INSTALLDIRS' => 'site',
           'NAME' => 'CGI::Application::MailPage',
           'VERSION_FROM' => 'lib/CGI/Application/MailPage.pm',
           'PREREQ_PM' => {
-                           'CGI::Application' => '3.2',
+                           'URI' => '0',
+                           'Mail::Header' => '0',
                            'File::Spec' => '0',
+                           'HTML::Template' => '0',
                            'HTML::TreeBuilder' => '0',
                            'HTTP::Date' => '0',
-                           'HTTP::Request' => '0',
+                           'Text::Format' => '0',
+                           'CGI::Application' => '3.2',
+                           'Net::SMTP' => '0',
                            'LWP::UserAgent' => '0',
                            'MIME::Entity' => '0',
-                           'Mail::Header' => '0',
                            'Mail::Internet' => '0',
-                           'Net::SMTP' => '0',
-                           'Text::Format' => '0',
-                           'URI' => '0'
-                         },
-          'INSTALLDIRS' => 'site',
-          'PL_FILES' => {}
+                           'HTTP::Request' => '0'
+                         }
         )
 ;

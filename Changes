@@ -1,5 +1,10 @@
 Revision history for Perl extension CGI::Application::MailPage.
 
+1.5 (Oct  3, 2005)
+        - Fixed vulnerability in the translation of page param into
+            file name. Allowed someone to maliciously put '../../', etc
+            into the file name and retrieve arbitrary documents from the
+            file system if remote_fetch was not enabled.
 1.4 (Oct 19, 2004)
         - Fixed bug with regard to 'acceptable_domains' if 'page' has
             a port number.

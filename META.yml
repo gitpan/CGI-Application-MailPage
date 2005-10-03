@@ -1,10 +1,10 @@
 --- #YAML:1.0
 name: CGI-Application-MailPage
-version: 1.4
+version: 1.5
 author:
   - Copyright 2002, Sam Tregar (sam@tregar.com).
   - |-
-    Co-maintainer Michael Peters (michael@petersfamily.org).
+    Co-maintainer Michael Peters (mpeters@plusthree.com).
   - |-
     Questions, bug reports and suggestions can be sent to the
     CGI::Application mailing list.  You can subscribe by sending a blank
@@ -15,6 +15,7 @@ license: perl
 requires:
   CGI::Application: 3.2
   File::Spec: 0
+  HTML::Template: 0
   HTML::TreeBuilder: 0
   HTTP::Date: 0
   HTTP::Request: 0
@@ -29,5 +30,5 @@ requires:
 provides:
   CGI::Application::MailPage:
     file: lib/CGI/Application/MailPage.pm
-    version: 1.4
-generated_by: Module::Build version 0.25
+    version: 1.5
+generated_by: Module::Build version 0.2611

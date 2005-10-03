@@ -14,7 +14,7 @@ use Text::Format;
 use URI;
 use base 'CGI::Application';
 
-$CGI::Application::VERSION = '1.4';
+$CGI::Application::VERSION = '1.5';
 
 sub setup {
     my $self = shift;
@@ -431,6 +431,9 @@ sub _find_html_file {
     } else {
         $path = ($url =~ /^\//) ? $url : "/$url";   #make sure it has a preceding path
     }
+
+    # now make sure we don't allow any '../' sections to try and hack the server
+    $path =~ s/\.\.\///g;
     # append it to document_root and return it
     return File::Spec->join($self->param('document_root'), $path);
 }  
@@ -933,7 +936,7 @@ that HTML::Template is expecting.
 
 Copyright 2002, Sam Tregar (sam@tregar.com).
 
-Co-maintainer Michael Peters (michael@petersfamily.org).
+Co-maintainer Michael Peters (mpeters@plusthree.com).
 
 Questions, bug reports and suggestions can be sent to the
 CGI::Application mailing list.  You can subscribe by sending a blank

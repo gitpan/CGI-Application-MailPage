@@ -6,6 +6,7 @@ my $build = Module::Build->new (
                     'perl'              => '5.6.1',
                     'CGI::Application'  => '3.2',
                     'File::Spec'        => '0',
+                    'HTML::Template'    => '0',
                     'HTML::TreeBuilder' => '0',
                     'HTTP::Date'        => '0',
                     'MIME::Entity'      => '0',
@@ -17,7 +18,6 @@ my $build = Module::Build->new (
                     'HTTP::Request'     => '0',
                     'LWP::UserAgent'    => '0',
         },
-        module_name => 'CGI::Application::MailPage',
         create_makefile_pl => 'traditional',
         pm_files => {
             'lib/CGI/Application/MailPage.pm' => 'lib/CGI/Application/MailPage.pm', 
