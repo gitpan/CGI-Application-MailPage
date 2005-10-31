@@ -9,12 +9,15 @@ use HTTP::Date;
 use MIME::Entity;
 use Mail::Header;
 use Mail::Internet;
+use Email::Valid;
 use Net::SMTP;
 use Text::Format;
 use URI;
+use Data::FormValidator;
+use Fcntl qw(:flock);
 use base 'CGI::Application';
 
-$CGI::Application::VERSION = '1.5';
+$CGI::Application::VERSION = '1.6';
 
 sub setup {
     my $self = shift;
@@ -26,16 +29,19 @@ sub setup {
     );
 
     # make sure we have required params
-    die "You must set PARAMS => { document_root => '/path' } in your MailPage stub!"
-        unless defined $self->param('document_root');
+    die "You must set either 'document_root' or 'remote_fetch' in PARAMS!"
+        unless defined $self->param('document_root') || $self->param('remote_fetch');
 
-    die "You must set PARAMS => { smtp_server => 'your.smtp.server' } in your MailPage stub!"
+    die "You must set 'your.smtp.server' in PARAMS!"
         unless defined $self->param('smtp_server');
+
+    # default custom validation_profile is an empty hash
+    $self->param(validation_profile => {} )
+        unless defined($self->param('validation_profile'));
 }
 
 sub show_form {
-    my $self = shift;
-    my $alert = shift;
+    my ($self, $err_msgs) = @_;
     my $query = $self->query;
 
     my $page = $query->param('page');
@@ -73,11 +79,6 @@ sub show_form {
         );
     }
 
-    $template->param(PAGE => $page);
-    $template->param(
-        SUBJECT => ($query->param('subject') || $self->param('email_subject') || '')
-    );
-
     my %formats = (
         both_attachment => 'Both Text and Full HTML as Attachments',
         html            => 'Full HTML',
@@ -101,7 +102,13 @@ sub show_form {
     }
     $template->param(FORMAT_OPTIONS => \@format_loop);
   
-    $template->param(ALERT => $alert) if defined $alert;
+    # set the default 'subject' as the email subject
+    $query->param('subject' => $self->param('email_subject'))
+        unless($query->param('subject'));
+    # if we have any alerts or error messages
+    if( $err_msgs && ref $err_msgs eq 'HASH' ) {
+        $template->param(%$err_msgs);
+    } 
     $template->param(%{$self->param('extra_tmpl_params')})
         if($self->param('extra_tmpl_params'));
     return $template->output();
@@ -111,35 +118,112 @@ sub send_mail {
     my $self = shift;
     my $query = $self->query;
 
-    # check parameters
-    my $name = $query->param('name');
-    return $self->error("Missing parameter assignment for \$name!")
-        unless defined($name);
+    # the default validation profile
+    my %validation_profile = (
+        required    => [qw(
+            name from_email to_emails format page subject
+        )],
+        optional    => [qw(note)],
+        constraints => {
+            name          => qr/^[\w '-\(\),\.]{1,50}$/,
+            from_email    => 'email',
+            to_emails     => sub {
+                my @emails = split(/\s*,\s*|\s+/, shift);
+                # make sure there aren't too many 
+                # if we have 'max_emails_per_request'
+                if( 
+                    $self->param('max_emails_per_request')
+                    && scalar @emails > $self->param('max_emails_per_request')
+                ) {
+                    return;
+                }
+                # check for valid email addresses
+                foreach my $email (@emails) {
+                    if(! Email::Valid->address($email) ) {
+                        return;
+                    }
+                }
+                return \@emails;
+            },
+            subject       => qr/^[\w '-\(\),\.\?\!]{1,50}$/,
+            note          => qr/^[^\0]{1,250}$/,
+            format        => sub {
+                my $val = shift;
+                my @valid_formats = qw(
+                    both_attachment html html_attachment 
+                    text text_attachment url
+                );
+                if( grep { $val eq $_ } @valid_formats ) {
+                    return $val;
+                }
+                return;
+            },
+            page        => qr/^[^\n\0]{1,256}$/, # TODO - what should this be?
+        },
+        untaint_all_constraints => 1,
+    );
 
-    my $from_email = $query->param('from_email');
-    return $self->error("Missing parameter assignment for \$from_email!")
-        unless defined($from_email);  
-  
-    my $to_emails = $query->param('to_emails');
-    return $self->error("Missing parameter assignment for \$to_emails!")
-        unless defined($to_emails);
+    # merge this default with the custom profile
+    # first merge the 'constraints'
+    if( $self->param('validation_profile')->{constraints} ) {
+        $validation_profile{constraints} = {
+            %{$validation_profile{constraints}},
+            %{ $self->param('validation_profile')->{constraints} }
+        };
+    }
+    delete $self->param('validation_profile')->{constraints};
+    # now merge the rest
+    %validation_profile = ( 
+        %validation_profile, 
+        %{ $self->param('validation_profile') },
+    );
 
-    my $note = $query->param('note');
-    return $self->error("Missing parameter assignment for \$note!")
-        unless defined($note);
-  
-    my $format = $query->param('format');
-    return $self->error("Missing parameter assignment for \$format!")
-        unless defined($format);
+    # now validate the data
+    my $results = Data::FormValidator->check($query, \%validation_profile);
 
-    my $subject = $query->param('subject');
-    return $self->error("Missing parameter assignment for \$subject!")
-        unless defined($subject);  
+    # create any error messages if necessary.
+    if( $results->has_invalid || $results->has_missing ) {
+        my %err_msgs = ();
+        # look at each invalid
+        foreach my $invalid ($results->invalid) {
+            $err_msgs{"error_$invalid"} = 1;
+            $err_msgs{"invalid_$invalid"} = 1;
+            $err_msgs{"any_errors"} = 1;
+            $err_msgs{"any_invalid"} = 1;
+        }
+        # look at each missing
+        foreach my $missing ($results->missing) {
+            $err_msgs{"error_$missing"} = 1;
+            $err_msgs{"missing_$missing"} = 1;
+            $err_msgs{"any_errors"} = 1;
+            $err_msgs{"any_missing"} = 1;
+        }
+
+        # for backwards compatability, add an 'alert' parameter
+        # for older templates that hold's the first error message we encounter
+        if( $err_msgs{error_name} ) {
+            $err_msgs{alert} = "Please fill in your name in the form below.";
+        } elsif( $err_msgs{invalid_from_email} ) {
+            $err_msgs{alert} = "Your email address is invalid - it should look like name\@host.com.";
+        } elsif( $err_msgs{missing_from_email} ) {
+            $err_msgs{alert} = "Please fill in your email address in the form below.";
+        } elsif( $err_msgs{invalid_to_emails} ) {
+            $err_msgs{alert} = "One of your friend's email addresses is invalid - it should look like name\@host.com.";
+        } elsif( $err_msgs{missing_to_emails} ) {
+            $err_msgs{alert} = "Please fill in your friends' email addresses in the form below.";
+        } elsif( $err_msgs{error_subject} ) {
+            $err_msgs{alert} = "Please enter a Subject for the email in the form below.";
+        }
+
+        # show these errors
+        return $self->show_form(\%err_msgs);
+    }
+
+    # get the valid data
+    my $valid_data = $results->valid();
+    my ($to_emails, $from_email, $name, $subject, $page, $note, $format) =
+        map { $valid_data->{$_} } qw(to_emails from_email name subject page note format);
     
-    my $page = $query->param('page');
-    return $self->error("Missing parameter assignment for \$page!")
-        unless defined($page);
-
     #make sure this page is either relative or within the acceptable_domains
     if(
         $self->param('acceptable_domains')  #if we have any domains 
@@ -152,32 +236,49 @@ sub send_mail {
             unless( grep { lc($domain) eq lc($_) } @{$self->param('acceptable_domains')});
     }
   
-    return $self->show_form("Please fill in your name in the form below.")
-        unless length $name;
+    # make sure we haven't exceeded our hourly limit
+    if( $self->param('max_emails_per_hour') ) {
+        my $file = $self->param('max_emails_per_hour_file');
+        unless( $file ) {
+            die "max_emails_per_hour_file ($file) must exist and be writable"
+                . " in order to use max_emails_per_hour!";
+        }
+        my ($error, $count, $last_time);
+        my $current_time = time();
+        # if already exists then open it and read the data
+        if( -e $file ) {
+            open(my $IN, $file) or die "Could not open $file for reading! $!";
+            ($last_time, $count) = split(qr/:/, <$IN>);
+            close($IN) or die "Could not close $file! $!";
+            $last_time ||= 0;
+            $count ||= 0;
+            # find out if we've done this within the hour
+            # if the difference is less than 1 hour, increase the count
+            # and make sure it's less than the hourly total
+            if( $current_time - $last_time < ( 60 * 60 ) ) {
+                $count += scalar(@$to_emails);
+                if( $count > $self->param('max_emails_per_hour') ) {
+                    $error = "Hourly limit on emails exceeded!";
+                }
+                # keep the last recorded time.
+                $current_time = $last_time;
+            } else {
+                $count = scalar(@$to_emails);
+            }
+        # else the file doesn't exist
+        } else {
+            $count = scalar(@$to_emails);
+        }
 
-    return $self->show_form("Please fill in your email address in the form below.")
-        unless length $from_email;
+        # now save the time and count
+        open(my $OUT, ">", $file) or die "Could not open $file for writing! $!";
+        flock($OUT, LOCK_EX) or die "Could not obtain lock on $file! $!";
+        print $OUT "$current_time:$count";
+        close($OUT) or die "Could not close $file! $!";
 
-    return $self->show_form("Please fill in your friends' email addresses in the form below.")
-        unless length $to_emails;
-
-    return $self->show_form("Please enter a Subject for the email in the form below.")
-        unless length $subject;
-
-    # check from_email
-    return $self->show_form("Your email address is invalid - it should look like name\@host.com.")
-        unless $from_email =~ /^[-\w\.]+\@[-\w\.]+$/;
-
-    # parse out to_emails
-    my @to_emails;
-    foreach (split(/[\s,]+/, $to_emails)) {
-        next unless length $_;
-        return $self->show_form("One of your friend's email addresses is invalid - \"$_\" - it should look like name\@host.com.")
-            unless /^[-\w\.]+\@[-\w\.]+$/;
-        push(@to_emails, $_);
+        # if we have an error then return it
+        return $self->error($error) if( $error );
     }
-    return $self->show_form("Please fill in your friends' email addresses in the form below.")
-        unless @to_emails;
 
     # find the HTML file to open (if it's not a remote fetch)
     my ($filename, $base_url, $base);
@@ -208,7 +309,6 @@ sub send_mail {
     if ($self->param('email_template')) {    
         $template = $self->load_tmpl($self->param('email_template'),
                                     die_on_bad_params   => 0,
-                                    associate           => $query,
                                     cache               => 1,
         );
     } else {
@@ -216,14 +316,16 @@ sub send_mail {
         @path = @{ $self->tmpl_path} if(ref($path[0]) eq 'ARRAY');
         $template = $self->load_tmpl('CGI/Application/MailPage/templates/email.tmpl',
                                     die_on_bad_params   => 0,
-                                    associate           => $query,
                                     path                => [@path, @INC],
                                     cache               => 1,
         );
     }
+    $template->param(%$valid_data);
     $template->param(%{$self->param('extra_tmpl_params')})
         if($self->param('extra_tmpl_params'));
 
+    # get the IP address of the original sender
+    my $sender_ip = $ENV{HTTP_X_FORWARDED_FOR} || $ENV{REMOTE_ADDR} || '';
     # $msg will end up with either a Mail::Internet or MIME::Entity object.
     my $msg;
 
@@ -231,12 +333,13 @@ sub send_mail {
     if (index($format, '_attachment') != -1) {
         # open up a MIME::Entity for our msg
         $msg = MIME::Entity->build(
-                               Type     => "multipart/mixed",
-                               From     => "$name <$from_email>",
-                               'Reply-To' => "$name <$from_email>",
-                               To       => \@to_emails,
-                               Subject  => $subject,
-                               Date => HTTP::Date::time2str(time()),
+            'Type'             => "multipart/mixed",
+            'From'             => "$name <$from_email>",
+            'Reply-To'         => "$name <$from_email>",
+            'To'               => $to_emails,
+            'Subject'          => $subject,
+            'Date'             => HTTP::Date::time2str(time()),
+            'X-Originating-Ip' => $sender_ip,
         );
 
         $msg->attach(Data => $template->output);
@@ -268,11 +371,11 @@ sub send_mail {
             $buffer =~ s/(<\s*[Hh][Ee][Aa][Dd].*?>)/$1\n<base href=$base_url>\n/
                 if( $base_url );
       
-            my $filename = $base ? "$base.html" : $page;
+            my $attached_filename = $base ? "$base.html" : $page;
             $msg->attach(
                     Data        => $buffer,
                     Type        => 'text/html',
-                    Filename    => $filename,
+                    Filename    => $attached_filename,
             );
         }
 
@@ -291,9 +394,11 @@ sub send_mail {
         my $header = Mail::Header->new();
         $header->add(From => "$name <$from_email>");
         $header->add('Reply-To' => "$name <$from_email>");
-        $header->add(To => join(', ', @to_emails));
+        $header->add(To => join(', ', @$to_emails));
         $header->add(Subject  => $subject);
         $header->add(Date => HTTP::Date::time2str(time()));
+        $header->add('X-Originating-Ip' => $sender_ip)
+            if( $sender_ip );
 
         my @lines;
         push(@lines, $template->output());
@@ -345,7 +450,7 @@ sub send_mail {
         $smtp->debug(1) if $self->param('smtp_debug');
   
         $smtp->mail("$name <$from_email>");
-        foreach (@to_emails) {
+        foreach (@$to_emails) {
             $smtp->to($_);
         }
         $smtp->data();
@@ -884,28 +989,6 @@ arguement, the name of the file to be opened.  It should return the
 text of the file.  Here's an example that changes all 'p's to 'q's in
 the text of the files:
 
-=item * acceptable_domains
-
-You may provide a list (array ref) of domains that are acceptable for this
-mailpage instance to send out in the emails. This prevents spammers, etc from
-using your mailpage to send out pages of advertisements, etc. If you give any
-values to this list, all 'page' urls that are being sent must either be
-relative or must be in your list of acceptable domains.
-
-=item * remote_fetch
-
-If this is true, then MailPage will try and perform a remote fetch of the page
-using L<LWP> instead of looking on the local filesystem for that page.
-
-=item * extra_tmpl_params
-
-If this value is a hash ref, then it will be combined with the parameters generated
-by MailPage for each template. The values in your hash will override those created
-by MailPage. The resulting hash will be passed to the template in question. This gives
-even more flexibility in making the mailpage section look just like the rest of your
-site. If is your responsibility to make sure that these parameters will be in the format
-that HTML::Template is expecting.
-
    #!/usr/bin/perl -w
    use CGI::Application::MailPage;
 
@@ -931,6 +1014,157 @@ that HTML::Template is expecting.
                 );
    $mailpage->run();
        
+
+=item * acceptable_domains
+
+You may provide a list (array ref) of domains that are acceptable for this
+mailpage instance to send out in the emails. This prevents spammers, etc from
+using your mailpage to send out pages of advertisements, etc. If you give any
+values to this list, all 'page' urls that are being sent must either be
+relative or must be in your list of acceptable domains.
+
+=item * remote_fetch
+
+If this is true, then MailPage will try and perform a remote fetch of the page
+using L<LWP> instead of looking on the local filesystem for that page.
+
+=item * extra_tmpl_params
+
+If this value is a hash ref, then it will be combined with the parameters generated
+by MailPage for each template. The values in your hash will override those created
+by MailPage. The resulting hash will be passed to the template in question. This gives
+even more flexibility in making the mailpage section look just like the rest of your
+site. It is your responsibility to make sure that these parameters will be in the format
+that HTML::Template is expecting.
+
+=item * max_emails_per_request
+
+This is an integer value which limits the number of email addresses that each request
+is allowed to send to.
+This option is useful to limit your server's potential to aid spammers in their nasty work.
+
+=item * max_emails_per_hour
+
+This is an integer value which limits the number of emails that allowed to be sent in
+an hour. MailPage will use a file (specified by L<max_emails_per_hour_file>) to keep 
+track of how many have been sent for each hour. If you use this option, make sure that
+this location is readable and writeable by the process in question.
+This option is useful to limit your server's potential to aid spammers in their nasty work.
+
+=item * max_emails_per_hour_file
+
+This is the name of the file used by L<max_emails_per_hour>. It must be present if you are
+using L<max_emails_per_hour>.
+
+=item * validation_profile
+
+This is a validation profile structure for use by L<Data::FormValidator> for validating
+user input. This profile is merged with the default profile and will override any existing
+rules. This allows you to customize the validation for all, or some of the fields.
+See L<INPUT VALIDATION> for more details.
+
+=head1 INPUT VALIDATION
+
+MailPage uses Data::FormValidator to validate the input the user fills in when presented
+with the email information form. By default the following validation rules are used:
+
+=over
+
+=item name
+
+Required.
+Can only contain word characters (\w), apostrophes ('), hyphens (-), and
+open or closed parenthesis, commas (,) and periods (.) with a maximum 
+length of 50 characters
+
+=item from_email
+
+Required.
+Must be a valid email address.
+
+=item to_emails
+
+Required.
+A list of email addresses separated by whitespace or commas. All email addresses
+must be valid with at most L<max_emails_per_request> individual addresses.
+
+=item subject
+
+Required.
+Can only contain word characters (\w), apostrophes ('), hyphens (-), and
+open or closed parenthesis, commas (,), periods (.), question  marks (?)
+and exclamation points (!) with a maximum length of 50 characters
+
+Required.
+
+=item note
+
+An optional text to send in the email. Can contain anything but a NULL byte with a
+maximum length of 250 characters.
+
+=item format
+
+Required.
+Must be one of the following values:
+
+=over
+
+=item both_attachment 
+
+=item html            
+
+=item html_attachment 
+
+=item text            
+
+=item text_attachment 
+
+=item url             
+
+=back
+
+=item page
+
+Can contain any characters except new lines (C<\n>) or NULL bytes with 
+a maximum length of 256 characters.
+
+=back
+
+Each field is untainted, so it can be safely processed.
+You can customize these rules with the L<validation_profile> parameter.
+
+=head2 Error Messages
+
+MailPage will pass flags for each error message into the template to be used as the
+template sees fit. The following error messages are created for each field:
+
+=over
+
+=item missing_$field
+
+If a required field is not present.
+
+=item any_missing
+
+If any required field is not present.
+
+=item invalid_$field
+
+If a field is present but fails validation.
+
+=item any_invalid
+
+If any field fails validation
+
+=item error_$field_name
+
+If a field is not present or fails the validation
+
+=item any_errors
+
+If any field is not present or fails the validation
+
+=back
 
 =head1 AUTHOR
 
